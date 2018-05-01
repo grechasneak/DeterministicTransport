@@ -24,18 +24,10 @@ def calc_current_out(current_in, Q_cell, tau, sigma_t):
 def calc_mean_current(current_in, current_out, Q_cell, mu, sigma_t):
 	return Q_cell / sigma_t - mu * (current_out - current_in)/(spacing * sigma_t)
 	
-def calc_flux(currents, weights):
-	return sum(currents * weights.reshape(len(weights), -1))
+
 	
-def calc_average_current(currents, weights, directions):
-	return (currents * (weights.reshape(len(weights), -1) * directions.reshape(len(directions), -1)))
-	
-def generate_currentArray(directions):
-	currents = []
-	for i in directions:
-		currents.append(np.zeros(128))
-	return np.asarray(currents)
-	
+
+
 def gen_fissionSource(grid, xs, flux): 
 	fission_sourceF = []
 	for material in grid['material']:
@@ -49,36 +41,56 @@ xs = pd.read_csv('XS.csv', index_col = 'material')
 
 global spacing
 spacing = 0.15625
-order = 5
+order = 20
 directions, weights = np.polynomial.legendre.leggauss(order)
 
 
 
-Q = 1/10000
+Q = 1/100
 cells = range(128)
 
-current_in = 0.1
+current_in = 0.001
 
 
-current_out = np.zeros(128)
-current_mean = np.zeros(128)
-
-currents = generate_currentArray(directions)
-currents_mean = generate_currentArray(directions)
-
-for idx in range(len(directions)):
-	for i in cells:
-		material = grid['material'].iloc[i]
-		sigma_t1 = xs.loc[material, 'sigma_t1']
-		tau = spacing * sigma_t1 / abs(directions[idx])
-		currents[idx][i] = calc_current_out(current_in, Q, directions[idx], sigma_t1) 
-		currents_mean[idx][i] = calc_mean_current(current_in, currents[idx][i], Q, tau, sigma_t1)
-		current_in = currents[idx][i]
+flux = np.zeros(128)
+current_cell = np.zeros(128)
 
 
+for i in range(100):
+	for idx in range(len(directions)):
+		if directions[idx] > 0:
+			for i in cells:
+				material = grid['material'].iloc[i]
+				sigma_t1 = xs.loc[material, 'sigma_t1']
+				tau = spacing * sigma_t1 / directions[idx]
+				
+				current_out = calc_current_out(current_in, Q, tau, sigma_t1)
+				current_mean = calc_mean_current(current_in, current_out, Q, directions[idx], sigma_t1)
+				
+				flux[i] += current_mean * weights[idx]
+				current_cell[i] = current_mean * weights[idx] * directions[idx]
+				
+				current_in = current_out
+		else:	
+			for i in reversed(cells):
+				material = grid['material'].iloc[i]
+				sigma_t1 = xs.loc[material, 'sigma_t1']
+				tau = spacing * sigma_t1 / directions[idx]
+				
+				current_out = calc_current_out(current_in, Q, tau, sigma_t1)
+				current_mean = calc_mean_current(current_in, current_out, Q, directions[idx], sigma_t1)
+				
+				flux[i] += current_mean * weights[idx]
+				current_cell[i] += current_mean * weights[idx] * directions[idx]
+				print('left')
+				current_in = current_out
+			
+	
+		
 
-flux = calc_flux(currents, weights)
-average_current = calc_average_current(currents, weights, directions)
+
+plt.plot(flux)
+plt.show()
 # f = lambda x: np.cos(x)
 # a = 0.0
 # b = np.pi/2	
