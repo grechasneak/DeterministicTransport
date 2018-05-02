@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from scipy import integrate
 
 
-class Step_characteristic():
+class SnTransportSolver():
 	def __init__(self, grid, xs_data, quadrature_order): 
 		self.grid = grid
 		self.xs = xs_data
@@ -48,8 +48,25 @@ class Step_characteristic():
 			
 			current_in = 0.005
 			for group in range(len(self.fluxes)):
-			
 				for idx, mu in enumerate(self.directions):
+					if mu < 0:
+						for i in reversed(self.cells):
+							material = grid['material'].iloc[i]
+							sigma_t1 = xs.loc[material, 'sigma_t1']
+							sigma_t2 = xs.loc[material, 'sigma_t2']
+							xs_data = [sigma_t1, sigma_t2]
+							
+							tau = spacing * xs_data[group] / abs(mu)
+							Q_cell = self.source[group][i]
+							
+							current_out = current_in * np.exp(-tau) + Q_cell / xs_data[group] * (1 - np.exp(-tau))
+							current_cell = Q_cell / xs_data[group] - abs(mu) * (current_out - current_in)/(spacing * xs_data[group])
+							
+							fluxes_[group][i] += current_cell * self.weights[idx]
+							currents_[group][i] += current_out * self.weights[idx] * self.directions[idx]
+							
+							current_in = current_out
+							
 					if mu > 0:
 						for i in self.cells:
 							material = grid['material'].iloc[i]
@@ -70,30 +87,11 @@ class Step_characteristic():
 						
 		
 							
-					if mu < 0:
-						for i in reversed(self.cells):
-							material = grid['material'].iloc[i]
-							sigma_t1 = xs.loc[material, 'sigma_t1']
-							sigma_t2 = xs.loc[material, 'sigma_t2']
-							xs_data = [sigma_t1, sigma_t2]
-							
-							tau = spacing * xs_data[group] / abs(mu)
-							Q_cell = self.source[group][i]
-							
-							current_out = current_in * np.exp(-tau) + Q_cell / xs_data[group] * (1 - np.exp(-tau))
-							current_cell = Q_cell / xs_data[group] - abs(mu) * (current_out - current_in)/(spacing * xs_data[group])
-							
-							fluxes_[group][i] += current_cell * self.weights[idx]
-							currents_[group][i] += current_out * self.weights[idx] * self.directions[idx]
-							
-							current_in = current_out
+				
 
-		
 				percent_diff = sum(((fluxes_[group] - self.fluxes[group])/(fluxes_[group]))) / len(fluxes_[group])
-
 				self.fluxes[group] = fluxes_[group]			
 				self.currents[group] = currents_[group]	
-		
 				print(percent_diff)
 
 	
@@ -106,24 +104,19 @@ xs = pd.read_csv('XS.csv', index_col = 'material')
 
 global spacing
 spacing = 0.15625
-order = 6
+order = 10
 
 
 
 
-flux_solver = Step_characteristic(grid, xs, order)
-for i in range(2):
-	flux_solver.update_Source()
-	flux_solver.iterate_flux()
+solver = SnTransportSolver(grid, xs, order)
+solver.update_Source()
+solver.iterate_flux()
 
 
 
-			
-	
-		
-
-
-plt.plot(flux_solver.fluxes[0])
+plt.plot(solver.fluxes[0])
+plt.plot(solver.fluxes[1])
 plt.show()
 # f = lambda x: np.cos(x)
 # a = 0.0
