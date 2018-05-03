@@ -9,19 +9,22 @@ from scipy import integrate
 
 
 class SnTransportSolver():
-	def __init__(self, grid, xs_data, quadrature_order): 
+	def __init__(self, grid, xs_data, quadrature_order , stopping_criteria): 
 		self.grid = grid
 		self.xs = xs_data
 		self.cells = range(len(grid))
 		self.directions, self.weights = np.polynomial.legendre.leggauss(quadrature_order)
+		self.stopping_criteria = stopping_criteria
 		
-		self.fluxes = [np.ones(len(grid)), np.ones(len(grid))]
+		self.fluxes = [np.ones(len(grid)), np.ones(len(grid))] #initial flux is uniform
 		self.currents = [np.ones(len(grid)), np.ones(len(grid))]
+		self.k = 1.0
+		self.update_Source()
 
 		
 	def update_Source(self):
-		self.source = [np.zeros(len(self.grid)), np.zeros(len(self.grid))]
-		self.fission_source = np.zeros(len(self.grid))
+		self.scatter_source = [np.zeros(len(self.grid)), np.zeros(len(self.grid))]
+		self.fission_source = [np.zeros(len(self.grid)), np.zeros(len(self.grid))]
 		
 		for i, material in enumerate(self.grid['material']):
 
@@ -32,21 +35,24 @@ class SnTransportSolver():
 			if material != 'water': #only thermal fission
 				nu2 = self.xs.loc[material, 'nu2']
 				sigma_f2 = self.xs.loc[material, 'sigma_f2']
+				self.fission_source[0][i] += self.fluxes[1][i] * nu2 * sigma_f2 / (self.k * 2)
 				
-				self.source[0][i] += self.fluxes[1][i] * nu2 * sigma_f2
-				self.fission_source[i] += self.fluxes[1][i] * nu2 * sigma_f2
-				
-			self.source[0][i] += self.fluxes[0][i] * sigma_s11 #within group fast scatter
-			self.source[1][i] += self.fluxes[0][i] * sigma_s12 + self.fluxes[1][i] * sigma_s22 #fast down scatter thermal within scatter
+			self.scatter_source[0][i] += (self.fluxes[0][i] * sigma_s11) / 2#within group fast scatter
+			self.scatter_source[1][i] += (self.fluxes[0][i] * sigma_s12 + self.fluxes[1][i] * sigma_s22) / 2 #fast down scatter thermal within scatter
+			
+		self.scatter_source = np.asarray(self.scatter_source)
+		self.fission_source = np.asarray(self.fission_source) 
+			
+		return self.scatter_source, self.fission_source
 			
 			
 	def iterate_flux(self):
-		percent_diff = 1.0
-		while percent_diff > 0.01:
+		percent_diff = 100
+		while percent_diff > self.stopping_criteria: #stopping criteria
 			fluxes_ = [np.zeros(len(grid)), np.zeros(len(grid))]
 			currents_ = [np.zeros(len(grid)), np.zeros(len(grid))]
 			
-			current_in = 0.005
+			current_in = 0.01
 			for group in range(len(self.fluxes)):
 				for idx, mu in enumerate(self.directions):
 					if mu < 0:
@@ -57,7 +63,8 @@ class SnTransportSolver():
 							xs_data = [sigma_t1, sigma_t2]
 							
 							tau = spacing * xs_data[group] / abs(mu)
-							Q_cell = self.source[group][i]
+							Q_cell = self.scatter_source[group][i] + self.fission_source[group][i]
+	
 							
 							current_out = current_in * np.exp(-tau) + Q_cell / xs_data[group] * (1 - np.exp(-tau))
 							current_cell = Q_cell / xs_data[group] - abs(mu) * (current_out - current_in)/(spacing * xs_data[group])
@@ -75,7 +82,7 @@ class SnTransportSolver():
 							xs_data = [sigma_t1, sigma_t2]
 							
 							tau = spacing * xs_data[group] / abs(mu)
-							Q_cell = self.source[group][i]
+							Q_cell =  self.scatter_source[group][i] + self.fission_source[group][i] 
 
 							current_out = current_in * np.exp(-tau) + Q_cell / xs_data[group] * (1 - np.exp(-tau))
 							current_cell = Q_cell / xs_data[group] - abs(mu) * (current_out - current_in)/(spacing * xs_data[group])
@@ -85,38 +92,52 @@ class SnTransportSolver():
 
 							current_in = current_out
 						
-		
-							
-				
-
-				percent_diff = sum(((fluxes_[group] - self.fluxes[group])/(fluxes_[group]))) / len(fluxes_[group])
+				#stopping criteria
+				percent_diff = sum((abs(fluxes_[group] - self.fluxes[group])/(fluxes_[group]))) / len(fluxes_[group])
 				self.fluxes[group] = fluxes_[group]			
 				self.currents[group] = currents_[group]	
-				print(percent_diff)
+				
+	def power_iteration(self):
+		fission_old = self.fission_source[0]
+		source_new, fission_new = self.update_Source()
+		
+		k_new = self.k * sum(fission_new[0]/max(fission_new[0])) / sum(fission_old / max(fission_old) )
+		
+		k_diff = abs(k_new - self.k)/k_new
+		F_diff = sum(abs(fission_new - fission_old))/len(fission_old)
+		print(k_new, k_diff)
+		
+		self.k = k_new
+		# if k_diff < self.stopping_criteria and k_diff < self.stopping_criteria:
+			# self.fission_source = fission_old
+		# else:
+			# self.k = k_new
 
-	
+
+		
+		
 
 
-	
 	
 grid = pd.read_csv('grid.csv')
 xs = pd.read_csv('XS.csv', index_col = 'material')
 
 global spacing
 spacing = 0.15625
-order = 10
+order = 20
+percent_diff = .001
+
+outer_iterations = 20
+
+solver = SnTransportSolver(grid, xs, order, percent_diff)
+
+for i in range(outer_iterations):
+	solver.iterate_flux()
+	solver.power_iteration()
 
 
-
-
-solver = SnTransportSolver(grid, xs, order)
-solver.update_Source()
-solver.iterate_flux()
-
-
-
-plt.plot(solver.fluxes[0])
-plt.plot(solver.fluxes[1])
+plt.plot(range(len(solver.fluxes[0])), solver.fluxes[0])
+plt.plot(range(len(solver.fluxes[0])), solver.fluxes[1])
 plt.show()
 # f = lambda x: np.cos(x)
 # a = 0.0
