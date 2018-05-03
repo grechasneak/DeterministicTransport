@@ -43,16 +43,25 @@ class SnTransportSolver():
 		self.scatter_source = np.asarray(self.scatter_source)
 		self.fission_source = np.asarray(self.fission_source) 
 			
+		self.scatter_source[0] = self.scatter_source[0]/max(self.scatter_source[0])
+		self.scatter_source[1] = self.scatter_source[1]/max(self.scatter_source[1])
+		
+		self.fission_source[0] = self.fission_source[0]/max(self.fission_source[0])
+		
 		return self.scatter_source, self.fission_source
 			
 			
 	def iterate_flux(self):
 		percent_diff = 100
+		current_in = 0.01
+		
+		boundary_currents = [np.ones(len(self.mu)), np.ones(len(self.mu))]
+		
 		while percent_diff > self.stopping_criteria: #stopping criteria
 			fluxes_ = [np.zeros(len(grid)), np.zeros(len(grid))]
 			currents_ = [np.zeros(len(grid)), np.zeros(len(grid))]
 			
-			current_in = 0.01
+
 			for group in range(len(self.fluxes)):
 				for idx, mu in enumerate(self.directions):
 					if mu < 0:
@@ -93,20 +102,21 @@ class SnTransportSolver():
 							current_in = current_out
 						
 				#stopping criteria
-				percent_diff = sum((abs(fluxes_[group] - self.fluxes[group])/(fluxes_[group]))) / len(fluxes_[group])
+				percent_diff = np.amax(abs(fluxes_[group] - self.fluxes[group]))
 				self.fluxes[group] = fluxes_[group]			
 				self.currents[group] = currents_[group]	
 				
 	def power_iteration(self):
 		fission_old = self.fission_source[0]
 		source_new, fission_new = self.update_Source()
+		#print(sum(source_new[0]), sum(source_new[1]))
 		
 		k_new = self.k * sum(fission_new[0]/max(fission_new[0])) / sum(fission_old / max(fission_old) )
 		
 		k_diff = abs(k_new - self.k)/k_new
-		F_diff = sum(abs(fission_new - fission_old))/len(fission_old)
-		print(k_new, k_diff)
-		
+		F_diff = abs(np.nanmax((fission_new[0] - fission_old) / fission_new[0]))
+		print(k_new)
+
 		self.k = k_new
 		# if k_diff < self.stopping_criteria and k_diff < self.stopping_criteria:
 			# self.fission_source = fission_old
@@ -127,7 +137,7 @@ spacing = 0.15625
 order = 20
 percent_diff = .001
 
-outer_iterations = 20
+outer_iterations = 10
 
 solver = SnTransportSolver(grid, xs, order, percent_diff)
 
