@@ -17,6 +17,7 @@ class SnTransportSolver():
 		self.stopping_criteria = stopping_criteria
 		
 		self.fluxes = [np.ones(len(grid)), np.ones(len(grid))] #initial flux is uniform
+		self.edge_fluxes = [np.ones(len(grid)), np.ones(len(grid))] 
 		self.currents = [np.ones(len(grid)), np.ones(len(grid))]
 		self.k = 1.5
 		self.update_Source()
@@ -59,6 +60,7 @@ class SnTransportSolver():
 		
 		while percent_diff > self.stopping_criteria: #stopping criteria
 			fluxes_ = [np.zeros(len(grid)), np.zeros(len(grid))]
+			edge_fluxes_ = [np.zeros(len(grid)), np.zeros(len(grid))]
 			currents_ = [np.zeros(len(grid)), np.zeros(len(grid))]
 			
 
@@ -80,6 +82,7 @@ class SnTransportSolver():
 							current_cell = Q_cell / xs_data[group] - abs(mu) * (current_out - current_in)/(spacing * xs_data[group])
 							
 							fluxes_[group][i] += current_cell * self.weights[idx]
+							edge_fluxes_[group][i] += current_out * self.weights[idx]
 							currents_[group][i] += current_out * self.weights[idx] * self.directions[idx]
 							
 							boundary_currents[group][idx] = current_out
@@ -100,13 +103,16 @@ class SnTransportSolver():
 							current_cell = Q_cell / xs_data[group] - abs(mu) * (current_out - current_in)/(spacing * xs_data[group])
 							
 							fluxes_[group][i] += current_cell * self.weights[idx]
+							edge_fluxes_[group][i] += current_out * self.weights[idx]
 							currents_[group][i] += current_out * self.weights[idx] * self.directions[idx]
 							
 							boundary_currents[group][idx] = current_out
 						
 				#stopping criteria
+
 				percent_diff = np.amax(abs(fluxes_[group] - self.fluxes[group]))
-				self.fluxes[group] = fluxes_[group]			
+				self.fluxes[group] = fluxes_[group]		
+				self.edge_fluxes[group] = edge_fluxes_[group]	
 				self.currents[group] = currents_[group]	
 				
 	def power_iteration(self):
@@ -138,21 +144,23 @@ xs = pd.read_csv('XS.csv', index_col = 'material')
 global spacing
 spacing = 0.15625
 order = 20
-percent_diff = .001
+percent_diff = .0001
 
-outer_iterations = 200
+
 
 solver = SnTransportSolver(grid, xs, order, percent_diff)
-
+power_iterations = 0
 while True:
 	solver.iterate_flux()
 	solver.power_iteration()
+	power_iterations += 1
 	if solver.converged == True:
+		print('k:', solver.k, power_iterations, 'iterations')
 		break
 
 
-plt.plot(range(len(solver.fluxes[0])), solver.fluxes[0])
-plt.plot(range(len(solver.fluxes[0])), solver.fluxes[1])
+plt.plot(range(len(solver.fluxes[0])), solver.edge_fluxes[0])
+plt.plot(range(len(solver.fluxes[0])), solver.edge_fluxes[1])
 plt.show()
 # f = lambda x: np.cos(x)
 # a = 0.0
