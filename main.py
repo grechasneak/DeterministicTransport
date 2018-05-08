@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import integrate
+import pickle
 
 
 class SnTransportSolver():
@@ -40,15 +40,10 @@ class SnTransportSolver():
 				self.fission_source[0][i] += self.fluxes[1][i] * nu2 * sigma_f2 
 				
 			self.scatter_source[0][i] += (self.fluxes[0][i] * sigma_s11) #within group fast scatter
-			self.scatter_source[1][i] += (self.fluxes[0][i] * sigma_s12 + self.fluxes[1][i] * sigma_s22)  #fast down scatter thermal within scatter
+			self.scatter_source[1][i] += (self.fluxes[0][i] * sigma_s12 + self.fluxes[1][i] * sigma_s22) #fast down scatter thermal within scatter
 			
 		self.scatter_source = np.asarray(self.scatter_source)
 		self.fission_source = np.asarray(self.fission_source) 
-			
-		#self.scatter_source[0] = self.scatter_source[0]/max(self.scatter_source[0])
-		#self.scatter_source[1] = self.scatter_source[1]/max(self.scatter_source[1])
-		
-		#self.fission_source[0] = self.fission_source[0]/max(self.fission_source[0])
 		
 		return self.scatter_source, self.fission_source
 			
@@ -118,25 +113,23 @@ class SnTransportSolver():
 	def power_iteration(self):
 		fission_old = self.fission_source[0]
 		source_new, fission_new = self.update_Source()
-		#print(sum(source_new[0]), sum(source_new[1]))
 		
 		k_new = self.k * sum(fission_new[0]) / sum(fission_old)
 		
-		
 		k_diff = abs(k_new - self.k)/k_new
 		F_diff = abs(np.nanmax((fission_new[0] - fission_old) / fission_new[0]))
-		print(k_diff, F_diff)
 		self.k = k_new
 		if k_diff < self.stopping_criteria and F_diff < self.stopping_criteria:
 			self.converged = True
 			print('converged')
 
 
-
+#Object saver utility function
+def save_object(python_object, filename):
+	with open(filename+".pickle","wb") as f:
+		pickle.dump(python_object,f)
 		
 		
-
-
 	
 grid = pd.read_csv('grid.csv')
 xs = pd.read_csv('XS.csv', index_col = 'material')
@@ -144,24 +137,20 @@ xs = pd.read_csv('XS.csv', index_col = 'material')
 global spacing
 spacing = 0.15625
 order = 20
-percent_diff = .0001
+stop_criteria = 1e-6
 
 
 
-solver = SnTransportSolver(grid, xs, order, percent_diff)
+solver = SnTransportSolver(grid, xs, order, stop_criteria)
 power_iterations = 0
 while True:
 	solver.iterate_flux()
 	solver.power_iteration()
 	power_iterations += 1
+	print('iteration: ', power_iterations, ' calculated k: ', solver.k)
 	if solver.converged == True:
 		print('k:', solver.k, power_iterations, 'iterations')
 		break
 
-
-plt.plot(range(len(solver.fluxes[0])), solver.edge_fluxes[0])
-plt.plot(range(len(solver.fluxes[0])), solver.edge_fluxes[1])
-plt.show()
-# f = lambda x: np.cos(x)
-# a = 0.0
-# b = np.pi/2	
+#data = (solver.fluxes, solver.edge_fluxes, solver.currents)
+#save_object(data, 'solver_data')
